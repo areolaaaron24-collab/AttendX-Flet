@@ -48,7 +48,6 @@ STUDENT_NAV = [
     ("schedule", "My Schedule", "EVENT_NOTE_ROUNDED"),
     ("attendance", "My Attendance", "FACT_CHECK_ROUNDED"),
     ("qr_pass", "My QR Pass", "QR_CODE_2_ROUNDED"),
-    ("scan_session", "Scan Class QR", "QR_CODE_SCANNER_ROUNDED"),
     ("face", "Face Setup", "FACE_RETOUCHING_NATURAL_ROUNDED"),
     ("fingerprint", "Fingerprint Setup", "FINGERPRINT_ROUNDED"),
     ("profile", "My Profile", "ACCOUNT_CIRCLE_ROUNDED"),
