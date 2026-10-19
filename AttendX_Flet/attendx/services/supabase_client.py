@@ -21,8 +21,9 @@ def get_client(settings: Settings | None = None) -> Client:
     config = settings or Settings.from_env()
     validate_public_key(config)
     try:
-        client_key = os.getenv("SUPABASE_ANON_KEY", "").strip() or config.supabase_key
-        return create_client(config.supabase_url, client_key)
+        # Settings.from_env already prefers the publishable key, then anon.
+        # Do not let a second environment variable override a validated public key.
+        return create_client(config.supabase_url, config.supabase_key)
     except Exception as exc:
         log.exception("Could not initialize Supabase client")
         raise BackendError(f"Could not initialize the Supabase client: {safe_message(exc)}") from exc
