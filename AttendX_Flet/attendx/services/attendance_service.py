@@ -24,12 +24,19 @@ class AttendanceService:
     def start_session(self, schedule_id: str) -> dict[str, Any]:
         if self.role != "TEACHER":
             raise BackendError("Only the assigned teacher can manage attendance.")
-        # AttendX-Web's current start-session RPC does not return the session token
-        # required by the Flet Student 'Scan Class QR' flow. Never display a fake QR.
-        raise BackendError(
-            "Teacher session QR is not yet supported by the existing AttendX-Web backend. "
-            "Use Attendance Center → Scan Student QR to verify each student's personal QR pass."
-        )
+        result = self._as_result(rpc(self.client, "start_attendance_session", {
+            "p_schedule_id": str(schedule_id),
+        }))
+        # The compatibility migration returns the server-created token. Never invent a
+        # client-only token because students' scans must be validated by PostgreSQL.
+        if not result.get("raw_token"):
+            raise BackendError(
+                "The server did not return a session QR token. Apply the reviewed "
+                "AttendX-Web compatibility migration before using session QR attendance."
+            )
+        result.setdefault("session_id", result.get("id"))
+        result.setdefault("ends_at", result.get("expires_at"))
+        return result
 
     def record_qr(self, raw_token: str, schedule_id: str) -> dict[str, Any]:
         if self.role != "TEACHER":
@@ -64,10 +71,12 @@ class AttendanceService:
     def record_session_qr(self, raw_token: str) -> dict[str, Any]:
         if self.role != "STUDENT":
             raise BackendError("Student authentication is required to scan a class session QR.")
-        raise BackendError(
-            "Student session-QR submission is not yet supported by the existing AttendX-Web backend. "
-            "Use your personal QR pass and ask the teacher to scan it."
-        )
+        token = str(raw_token or "").strip()
+        if not token or len(token) > 160:
+            raise BackendError("Class QR content is missing or invalid.")
+        return self._as_result(rpc(self.client, "record_session_qr_attendance", {
+            "p_token_text": token,
+        }))
 
     def record_biometric(self, student_id: str, schedule_id: str, method: str) -> dict[str, Any]:
         method = method.upper()
@@ -86,20 +95,24 @@ class AttendanceService:
     def record_manual(self, student_id: str, schedule_id: str, reason: str) -> dict[str, Any]:
         if self.role != "TEACHER":
             raise BackendError("Only teachers can record manual attendance corrections.")
-        if len((reason or "").strip()) < 10:
+        clean_reason = (reason or "").strip()
+        if len(clean_reason) < 10:
             raise BackendError("Enter an audit reason of at least 10 characters.")
-        raise BackendError(
-            "Manual attendance correction requires a server-side audited RPC that is not present "
-            "in the current AttendX-Web schema. No attendance record was written."
-        )
+        return self._as_result(rpc(self.client, "record_manual_attendance", {
+            "p_student_id": str(student_id),
+            "p_schedule_id": str(schedule_id),
+            "p_reason": clean_reason,
+        }))
 
     def close_session(self, session_id: str) -> dict[str, Any]:
         if self.role != "TEACHER":
             raise BackendError("Only teachers can close their attendance session.")
-        raise BackendError(
-            "Closing a Flet session is not available in the existing AttendX-Web backend yet. "
-            "This action did not change the database."
-        )
+        try:
+            return self._as_result(rpc(self.client, "close_attendance_session", {
+                "p_session_id": str(session_id),
+            }))
+        except Exception as exc:
+            raise BackendError(f"Could not close the attendance session: {safe_message(exc)}") from exc
 
     def finalize_schedule(self, schedule_id: str, attendance_date: str | None = None) -> dict[str, Any]:
         if self.role != "TEACHER":
