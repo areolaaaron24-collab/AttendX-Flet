@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -70,7 +72,19 @@ def validate_public_key(settings: Settings) -> None:
         )
     if not settings.supabase_url.startswith("https://"):
         raise ConfigurationError("SUPABASE_URL must be the HTTPS URL of your Supabase project.")
-    if "service_role" in settings.supabase_key.lower() or settings.supabase_key.startswith("sb_secret_"):
+    key = settings.supabase_key.strip()
+    is_secret = "service_role" in key.lower() or key.startswith("sb_secret_")
+    # Legacy Supabase service-role keys are JWTs whose role is encoded in the
+    # payload. Decode only to identify the role; this does not validate the JWT.
+    parts = key.split(".")
+    if len(parts) == 3:
+        try:
+            payload = parts[1] + "=" * (-len(parts[1]) % 4)
+            claims = json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
+            is_secret = is_secret or claims.get("role") == "service_role"
+        except (ValueError, UnicodeError, json.JSONDecodeError):
+            pass
+    if is_secret:
         raise ConfigurationError(
             "A secret/service-role key was supplied to the client. Use only the publishable/anon key."
         )
