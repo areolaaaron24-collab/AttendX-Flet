@@ -18,8 +18,6 @@ class Settings:
     # Legacy public anon key used by supabase-py Auth/PostgREST requests.
     # Do not put a service-role or sb_secret key here.
     supabase_key: str
-    # Optional publishable key used for Supabase Edge Function requests.
-    supabase_publishable_key: str = ""
     timezone: str = "Asia/Manila"
     camera_index: int = 0
     camera_width: int = 640
@@ -31,6 +29,9 @@ class Settings:
     fingerprint_password: int = 0
     exports_dir: Path = ROOT_DIR / "exports"
     log_level: str = "INFO"
+    # Optional publishable key used for Supabase Edge Function requests.
+    # Kept at the end to preserve the prior positional Settings constructor.
+    supabase_publishable_key: str = ""
 
     @property
     def is_configured(self) -> bool:
