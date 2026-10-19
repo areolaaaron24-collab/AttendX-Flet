@@ -13,7 +13,7 @@ log = logging.getLogger(__name__)
 
 
 class FaceBiometricService:
-    """Stores 128-dimensional face descriptors; no raw face images are uploaded."""
+    """Stores desktop face_recognition 128D descriptors separately from the browser face-api model; no raw face images are uploaded."""
 
     def __init__(self, client: Client, actor_id: str, role: str):
         self.client = client
@@ -50,7 +50,7 @@ class FaceBiometricService:
             # AttendX-Web stores numeric descriptors in a PostgreSQL double precision[].
             # Keep a distinct model_version because face_recognition embeddings are not
             # interchangeable with the browser's face-api descriptors.
-            self.client.table("face_templates").upsert({
+            self.client.table("flet_face_templates").upsert({
                 "student_id": self.actor_id,
                 "descriptor": [float(x) for x in embedding],
                 "model_version": "face_recognition-128d-v1",
@@ -82,14 +82,14 @@ class FaceBiometricService:
             ) from exc
 
     def has_own_face(self) -> bool:
-        rows = query_data(self.client.table("face_templates").select("student_id").eq("student_id", self.actor_id).limit(1))
+        rows = query_data(self.client.table("flet_face_templates").select("student_id").eq("student_id", self.actor_id).limit(1))
         return bool(rows)
 
     def delete_own_face(self) -> None:
         if self.role != "STUDENT":
             raise BackendError("Only the student can request deletion of their own face template.")
         try:
-            self.client.table("face_templates").delete().eq("student_id", self.actor_id).execute()
+            self.client.table("flet_face_templates").delete().eq("student_id", self.actor_id).execute()
         except Exception as exc:
             raise BackendError(f"Could not delete face template: {safe_message(exc)}") from exc
 
