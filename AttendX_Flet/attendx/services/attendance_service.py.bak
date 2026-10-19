@@ -1,0 +1,125 @@
+from __future__ import annotations
+
+import secrets
+from datetime import datetime
+from typing import Any
+from zoneinfo import ZoneInfo
+
+from supabase import Client
+
+from attendx.services.supabase_client import BackendError, query_by_values, query_paginated, rpc, safe_message
+
+
+class AttendanceService:
+    METHODS = {"QR", "FACE", "FINGERPRINT", "MANUAL"}
+
+    def __init__(self, client: Client, actor_id: str, role: str):
+        self.client = client
+        self.actor_id = actor_id
+        self.role = role.upper()
+
+    def start_session(self, schedule_id: str) -> dict[str, Any]:
+        if self.role != "TEACHER":
+            raise BackendError("Only the teacher assigned to the schedule can start attendance.")
+        token = secrets.token_urlsafe(32)
+        result = rpc(self.client, "start_attendance_session", {
+            "p_schedule_id": schedule_id,
+            "p_session_token": token,
+        })
+        if isinstance(result, list) and result:
+            result = result[0]
+        if isinstance(result, dict):
+            result["raw_token"] = token
+        return result
+
+    def record_qr(self, raw_token: str, schedule_id: str) -> dict[str, Any]:
+        if self.role != "TEACHER":
+            raise BackendError("Teacher authentication is required to verify a student QR pass.")
+        result = rpc(self.client, "record_attendance_by_student_qr", {
+            "p_token_text": raw_token,
+            "p_schedule_id": schedule_id,
+        })
+        return self._as_result(result)
+
+    def record_session_qr(self, raw_token: str) -> dict[str, Any]:
+        if self.role != "STUDENT":
+            raise BackendError("Student authentication is required to submit session QR attendance.")
+        result = rpc(self.client, "record_session_qr_attendance", {"p_token_text": raw_token})
+        return self._as_result(result)
+
+    def record_biometric(self, student_id: str, schedule_id: str, method: str) -> dict[str, Any]:
+        method = method.upper()
+        if self.role != "TEACHER":
+            raise BackendError("Only an authenticated teacher can submit a verified biometric result.")
+        if method not in {"FACE", "FINGERPRINT"}:
+            raise BackendError("Unsupported attendance method.")
+        return self._as_result(rpc(self.client, "record_biometric_attendance", {
+            "p_student_id": student_id, "p_schedule_id": schedule_id, "p_method": method,
+        }))
+
+    def record_manual(self, student_id: str, schedule_id: str, reason: str) -> dict[str, Any]:
+        if self.role != "TEACHER":
+            raise BackendError("Only teachers can record manual attendance corrections.")
+        if len((reason or "").strip()) < 10:
+            raise BackendError("Enter an audit reason of at least 10 characters.")
+        return self._as_result(rpc(self.client, "record_manual_attendance", {
+            "p_student_id": student_id,
+            "p_schedule_id": schedule_id,
+            "p_reason": reason.strip(),
+        }))
+
+    def close_session(self, session_id: str) -> dict[str, Any]:
+        if self.role != "TEACHER":
+            raise BackendError("Only teachers can close their attendance session.")
+        return self._as_result(rpc(self.client, "close_attendance_session", {"p_session_id": session_id}))
+
+    def finalize_schedule(self, schedule_id: str, attendance_date: str | None = None) -> dict[str, Any]:
+        if self.role != "TEACHER":
+            raise BackendError("Only teachers can finalize attendance.")
+        return self._as_result(rpc(self.client, "finalize_attendance_session", {
+            "p_schedule_id": schedule_id,
+            "p_session_date": attendance_date or datetime.now(ZoneInfo("Asia/Manila")).date().isoformat(),
+        }))
+
+    def teacher_records(self, schedule_id: str | None = None, attendance_date: str | None = None,
+                        limit: int = 500) -> list[dict[str, Any]]:
+        bounded_limit = min(max(int(limit), 1), 10_000)
+        def make_query():
+            query = self.client.table("attendance_records").select("*").order("attendance_date", desc=True).order("attendance_time", desc=True).order("id")
+            if schedule_id:
+                query = query.eq("schedule_id", schedule_id)
+            if attendance_date:
+                query = query.eq("attendance_date", attendance_date)
+            return query
+        records = query_paginated(make_query, page_size=500, max_items=bounded_limit)
+        if not records:
+            return []
+        student_ids = list({r["student_id"] for r in records})
+        schedule_ids = list({r["schedule_id"] for r in records})
+        profiles = query_by_values(self.client, "profiles", "id,account_id,first_name,middle_name,last_name,suffix,course,year_level,section", "id", student_ids)
+        schedules = query_by_values(self.client, "schedules", "*", "id", schedule_ids)
+        cmap = {p["id"]: p for p in profiles}
+        smap = {s["id"]: s for s in schedules}
+        for row in records:
+            row["student"] = cmap.get(row["student_id"], {})
+            row["schedule"] = smap.get(row["schedule_id"], {})
+        return records
+
+    def today_summary(self) -> dict[str, int]:
+        if self.role != "TEACHER":
+            return {"today": 0, "week": 0, "month": 0, "present": 0, "late": 0, "late_absent": 0, "absent": 0}
+        value = rpc(self.client, "teacher_attendance_dashboard_stats", {})
+        if isinstance(value, list) and value:
+            value = value[0]
+        value = value if isinstance(value, dict) else {}
+        return {key: int(value.get(key) or 0) for key in ("today", "week", "month", "present", "late", "late_absent", "absent")}
+
+    @staticmethod
+    def _as_result(value: Any) -> dict[str, Any]:
+        if isinstance(value, list) and value:
+            value = value[0]
+        if isinstance(value, dict):
+            if value.get("ok") is False:
+                raise BackendError(str(value.get("message") or "Attendance could not be recorded."))
+            return value
+        return {"ok": bool(value), "message": str(value or "Request completed.")}

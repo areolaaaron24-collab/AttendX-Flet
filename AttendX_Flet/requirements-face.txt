@@ -1,0 +1,2 @@
+# Optional desktop face recognition. Installation may require a compiler and native dlib support.
+face-recognition>=1.3.0

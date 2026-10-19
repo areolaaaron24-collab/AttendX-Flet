@@ -1,0 +1,13 @@
+project_id = "attendx-your-project-ref"
+
+[functions.account-register]
+verify_jwt = false
+
+[functions.account-id-login]
+verify_jwt = false
+
+[functions.account-password-reset]
+verify_jwt = false
+
+[functions.account-password-reset-page]
+verify_jwt = false

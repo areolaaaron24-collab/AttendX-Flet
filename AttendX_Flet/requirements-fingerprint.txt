@@ -1,0 +1,3 @@
+# Optional, only for a compatible serial AS608/R307-family reader.
+pyserial>=3.5
+pyfingerprint>=1.5

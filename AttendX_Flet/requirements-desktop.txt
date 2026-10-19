@@ -1,0 +1,5 @@
+-r requirements.txt
+opencv-python>=4.9,<5.0
+numpy>=1.26,<3.0
+# For face recognition, also install requirements-face.txt.
+# For an AS608/R307 compatible reader, also install requirements-fingerprint.txt.

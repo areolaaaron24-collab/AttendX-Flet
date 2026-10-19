@@ -1,0 +1,29 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+exports/
+logs/
+*.log
+build/
+dist/
+.DS_Store
+Thumbs.db
+*.sqlite
+*.db
+face_templates/
+biometric_cache/
+
+# Legacy migration exports contain student records; never commit them.
+migration_export/
+migration_exports/
+legacy_exports/
+migration_import.sql
+account_map.csv
+
+# Local patch backups
+.local_patch_backup/
