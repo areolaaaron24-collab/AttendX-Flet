@@ -32,7 +32,7 @@ flet build apk
 flet build aab
 ```
 
-Install/configure a supported JDK (17 is the documented baseline in the Flet build guide) and Android SDK; grant and test requested app permissions on a real phone. The current camera scanning path imports desktop OpenCV lazily and reports when it is unavailable; a native mobile camera/QR integration still needs to be implemented and tested. A USB-to-serial fingerprint reader requires Android OTG/USB-host support and a native/compatible serial bridge; the desktop Python reader integration does not guarantee phone compatibility. Mobile face recognition cannot be assumed to support dlib wheels.
+Install/configure a supported JDK (17 is the documented baseline in the Flet build guide) and Android SDK; grant and test requested app permissions on a real phone. The current camera scanning path imports desktop OpenCV lazily and reports when it is unavailable; a native mobile camera/QR integration still needs to be implemented and tested. The planned phone fingerprint flow is Android's native BiometricPrompt for the currently signed-in student's own device. It confirms a local biometric authentication; Android does not provide AttendX with a reusable fingerprint image/template and it cannot identify students on a shared phone. A server-authorized student self-attendance RPC must bind the signed-in identity to an enrolled schedule before this can be used for attendance. That native integration and server-side authorization are not implemented/verified yet. Mobile face recognition cannot be assumed to support dlib wheels and needs a mobile-compatible capture/recognition implementation.
 
 ## iOS
 
@@ -53,8 +53,8 @@ The iOS build must be run on macOS with the relevant Xcode/iOS SDK, signing cert
 | Excel/CSV/PDF generation | Intended; verify save/open paths | Verify app sandbox/export/share UX |
 | QR session/pass display | Intended | Intended; device testing needed |
 | Camera QR scanning | Requires desktop camera adapter/dependency | Native camera scanning not yet implemented/verified |
-| Face recognition | Optional native face-recognition/dlib packages; not hardware-tested | No mobile-compatible detector pipeline verified |
-| AS608/R307 fingerprint reader | Optional serial reader and supported firmware; not hardware-tested | Requires platform-specific USB/serial bridge; not implemented |
+| Face recognition | Optional native face-recognition/dlib packages; not hardware-tested | Student self-registration is in the UI, but mobile-compatible capture/recognition is not implemented/verified |
+| Phone fingerprint authentication | Not available in this desktop build | Planned Android BiometricPrompt for the signed-in student; native prompt and server-authorized self-attendance are not implemented/verified |
 
 Until a hardware test is completed, tell operators to use a configured, authorized QR workflow as the supported alternative when camera scanning is available. If QR scanning is not available either, use a teacher-authorized, reason-recorded manual attendance correction only if that workflow is enabled by database policy; never invent or silently record a successful scan.
 
