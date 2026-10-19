@@ -141,38 +141,73 @@ def _attendance_history(app) -> ft.Control:
 
 def _qr_pass(app) -> ft.Control:
     schedules = app.student_service.my_schedules()
-    labels = [schedule_label(s) for s in schedules]
-    schedule_ids = {schedule_label(s): str(s["id"]) for s in schedules}
-    choice = dropdown("Class / Subject", labels, value=labels[0] if labels else None)
-    preview = ft.Image(src="", width=250, height=250, fit=ft.BoxFit.CONTAIN)
-    status = ft.Text("Generate a QR pass for one enrolled class. The pass is valid only for that class.", color=MUTED, size=12)
+    qr_cards: list[ft.Control] = []
+    status_by_schedule: dict[str, ft.Text] = {}
+    preview_by_schedule: dict[str, ft.Image] = {}
 
-    async def generate(_e):
+    if not schedules:
+        return ft.Column([
+            heading("My QR Passes", "Each enrolled subject gets its own QR pass automatically."),
+            empty_state("No enrolled subjects yet", "Open Add Subject and enroll in a class. Its QR pass will appear here automatically.", "QR_CODE_ROUNDED"),
+        ], spacing=12, scroll=ft.ScrollMode.AUTO, expand=True)
+
+    for schedule in schedules:
+        schedule_id = str(schedule["id"])
+        subject_name = (schedule.get("subject") or {}).get("subject_name", "Subject")
+        label = schedule_label(schedule)
+        preview = ft.Image(src="", width=220, height=220, fit=ft.BoxFit.CONTAIN)
+        status = ft.Text("Creating your subject QR pass…", color=MUTED, size=12, selectable=True)
+        preview_by_schedule[schedule_id] = preview
+        status_by_schedule[schedule_id] = status
+        qr_cards.append(card(ft.Column([
+            ft.Row([
+                ft.Icon(ft.Icons.QR_CODE_2_ROUNDED, color=CYAN, size=24),
+                ft.Column([
+                    ft.Text(subject_name, size=16, weight=ft.FontWeight.BOLD, color=WHITE),
+                    ft.Text(label, size=11, color=MUTED),
+                ], spacing=3, expand=True),
+            ], spacing=10),
+            ft.Container(content=preview, alignment=ft.Alignment.CENTER, bgcolor="#FFFFFF", border_radius=14, padding=10),
+            status,
+            subtle_button(
+                "Refresh This Subject QR",
+                lambda _e, sid=schedule_id: generate_for_schedule(sid),
+                icon="REFRESH_ROUNDED",
+            ),
+        ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER), padding=14))
+
+    async def generate_for_schedule(schedule_id: str):
+        status = status_by_schedule[schedule_id]
+        preview = preview_by_schedule[schedule_id]
+        status.value = "Creating / refreshing QR pass…"
+        status.color = MUTED
+        app.page.update()
         try:
-            if not choice.value or choice.value not in schedule_ids:
-                raise BackendError("Enroll in a subject before generating a QR pass.")
-            _token, data_uri = await asyncio.to_thread(app.qr_service.issue_student_pass, schedule_ids[choice.value])
+            _token, data_uri = await asyncio.to_thread(app.qr_service.issue_student_pass, schedule_id)
             preview.src = data_uri
-            status.value = "QR pass generated. Show this code to the teacher's scanner for the selected class."
+            status.value = "QR pass ready. Show this code to the teacher scanning this exact subject."
             status.color = SUCCESS
-            app.audit_service.record("student_qr_pass_issued", "qr_tokens", schedule_ids[choice.value], {})
-            app.page.update()
+            app.audit_service.record("student_qr_pass_issued", "qr_tokens", schedule_id, {})
         except Exception as exc:
             status.value = str(exc)
             status.color = ERROR
-            app.page.update()
+        app.page.update()
+
+    async def generate_all():
+        # One separate server-issued pass per enrolled schedule; errors for one subject
+        # must not prevent the remaining subjects from getting their QR.
+        for schedule in schedules:
+            await generate_for_schedule(str(schedule["id"]))
+
+    # Each enrolled subject's QR is created automatically when the student opens this page.
+    app.page.run_task(generate_all)
 
     return ft.Column([
-        heading("My QR Pass", "QR passes are specific to an enrolled schedule; only token hashes are stored in Supabase."),
-        card(ft.Column([
-            choice,
-            primary_button("Generate / Refresh QR Pass", generate, icon="QR_CODE_2_ROUNDED"),
-            status,
-            ft.Container(content=preview, alignment=ft.Alignment.CENTER, bgcolor="#FFFFFF", border_radius=14, padding=12),
-            ft.Text("If you refresh or leave this page, generate a new pass if the raw token is no longer available.", color=MUTED, size=11),
-        ], spacing=12, horizontal_alignment=ft.CrossAxisAlignment.CENTER)),
+        heading("My QR Passes", "A separate QR pass is created automatically for every subject you are enrolled in."),
+        ft.Text("Choose the QR under the matching subject. Each pass is tied to that schedule, and attendance is verified by the server.", color=MUTED, size=12),
+        *qr_cards,
+        ft.Text("Privacy: the app displays the pass returned by Supabase; raw QR tokens are not written to the audit log.", color=MUTED, size=11),
     ], spacing=12, scroll=ft.ScrollMode.AUTO, expand=True)
-
 
 def _face_registration(app) -> ft.Control:
     preview = ft.Image(src="", width=540, height=330, fit=ft.BoxFit.CONTAIN)
