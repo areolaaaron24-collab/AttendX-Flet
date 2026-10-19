@@ -17,8 +17,6 @@ def build_teacher_attendance_center(app) -> ft.Control:
     choice = dropdown("Select Schedule", [schedule_label(s) for s in schedules], value=schedule_label(initial_schedule) if initial_schedule else None)
     id_by_label = {schedule_label(s): str(s["id"]) for s in schedules}
     selected_text = ft.Text("Select one of your schedules to start an attendance session.", color=MUTED, size=12)
-    session_preview = ft.Image(src="", width=210, height=210, fit=ft.BoxFit.CONTAIN, visible=False)
-    session_info = ft.Text("", color=CYAN, size=12)
     camera_preview = ft.Image(width=540, height=330, fit=ft.BoxFit.CONTAIN, src="")
     camera_status = ft.Text("Camera is stopped.", color=MUTED, size=12)
     scan_results = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO, height=240)
@@ -52,32 +50,6 @@ def build_teacher_attendance_center(app) -> ft.Control:
         if not choice.value or choice.value not in id_by_label:
             raise BackendError("Create or select a schedule before starting attendance.")
         return id_by_label[choice.value]
-
-    async def start_session(_e):
-        try:
-            schedule_id = selected_schedule_id()
-            result = await asyncio.to_thread(app.attendance_service.start_session, schedule_id)
-            session_preview.src = app.qr_service.to_data_uri(result["raw_token"])
-            session_preview.visible = True
-            session_info.value = f"Active session · ID {result.get('session_id')} · Ends {str(result.get('ends_at', ''))[:16]}"
-            app.active_session_id = str(result.get("session_id"))
-            selected_text.value = "Students can scan this session QR from the Student Portal. Keep this window open until class ends."
-            app.audit_service.record("attendance_session_started", "attendance_sessions", str(result.get("session_id")), {"schedule_id": schedule_id})
-            app.page.update()
-        except Exception as exc:
-            app.notify(str(exc), error=True)
-
-    async def stop_session(_e):
-        try:
-            if not getattr(app, "active_session_id", None):
-                raise BackendError("There is no active session ID in this window.")
-            result = await asyncio.to_thread(app.attendance_service.close_session, app.active_session_id)
-            session_info.value = result.get("message", "Session closed.")
-            session_preview.visible = False
-            app.page.update()
-            app.notify(session_info.value)
-        except Exception as exc:
-            app.notify(str(exc), error=True)
 
     def update_live_records(schedule_id: str):
         try:
@@ -277,7 +249,6 @@ def build_teacher_attendance_center(app) -> ft.Control:
             schedule_id = selected_schedule_id()
             result = await asyncio.to_thread(app.attendance_service.finalize_schedule, schedule_id)
             selected_text.value = result.get("message", "Attendance finalized.")
-            session_preview.visible = False
             update_live_records(schedule_id)
             app.page.update()
             app.notify(selected_text.value)
@@ -336,6 +307,12 @@ def build_teacher_attendance_center(app) -> ft.Control:
     if schedules and initial_schedule:
         update_live_records(str(initial_schedule["id"]))
         load_manual_roster(str(initial_schedule["id"]))
+    def refresh_records():
+        if choice.value in id_by_label:
+            schedule_id = selected_schedule_id()
+            update_live_records(schedule_id)
+            app.page.update()
+
     def on_schedule_change(_e):
         if choice.value in id_by_label:
             schedule_id = selected_schedule_id()
@@ -344,41 +321,45 @@ def build_teacher_attendance_center(app) -> ft.Control:
     choice.on_select = on_schedule_change
 
     return ft.Column([
-        heading("Attendance Center", "Run a session, verify student QR passes, or use the supported face/fingerprint hardware."),
+        heading("Attendance Center", "Select one of your class schedules, then verify enrolled students using QR, face recognition, or a supported fingerprint reader."),
         card(ft.Column([
+            ft.Text("Class & attendance controls", size=17, weight=ft.FontWeight.BOLD, color=WHITE),
             choice,
-            ft.Text("QR options", size=16, weight=ft.FontWeight.BOLD, color=CYAN),
+            selected_text,
+            ft.Text("QR workflow: open the student's QR Pass page and generate the pass for this exact class. Then choose Scan Student QR below. This uses the existing AttendX-Web QR verification service.", size=12, color=MUTED),
             ft.Row([
-                primary_button("Start Session QR", start_session, icon="QR_CODE_2_ROUNDED"),
-                subtle_button("Close Session", stop_session, icon="STOP_CIRCLE_OUTLINED"),
+                subtle_button("Refresh Attendance List", lambda _e: refresh_records(), icon="REFRESH_ROUNDED"),
                 subtle_button("Finalize & Mark Missing Absent", finalize_session, icon="FACT_CHECK_ROUNDED"),
             ], wrap=True, spacing=10),
-            selected_text,
-            ft.Row([session_preview, ft.Column([session_info, ft.Text("Session QR contains an opaque token. Raw tokens are not saved in the database.", size=11, color=MUTED)], expand=True)], wrap=True),
         ], spacing=12)),
         card(ft.Column([
-            ft.Text("Continuous Scanner", size=18, weight=ft.FontWeight.BOLD, color=WHITE),
-            ft.Text("Scan student-specific QR passes, or start face recognition. The window remains open for the next person.", size=12, color=MUTED),
+            ft.Text("Attendance Verification", size=18, weight=ft.FontWeight.BOLD, color=WHITE),
+            ft.Text("Choose one method. The scanner remains active for multiple students until you press EXIT. Only server-confirmed attendance appears in the saved list.", size=12, color=MUTED),
             ft.Row([
                 primary_button("Scan Student QR", scan_qr, icon="QR_CODE_SCANNER_ROUNDED"),
-                subtle_button("Start Face Attendance", scan_face, icon="FACE_RETOUCHING_NATURAL_ROUNDED"),
-                subtle_button("Start Fingerprint Attendance", scan_fingerprint, icon="FINGERPRINT_ROUNDED"),
-                subtle_button("EXIT / Release Camera / Reader", stop_scan, icon="CLOSE_ROUNDED"),
+                subtle_button("Start Face Recognition", scan_face, icon="FACE_RETOUCHING_NATURAL_ROUNDED"),
+                subtle_button("Start Fingerprint Reader", scan_fingerprint, icon="FINGERPRINT_ROUNDED"),
+                subtle_button("EXIT / Stop Scanner", stop_scan, icon="CLOSE_ROUNDED"),
             ], wrap=True, spacing=10),
             camera_status,
             ft.Container(content=camera_preview, bgcolor="#06162A", border_radius=12, padding=6, alignment=ft.Alignment.CENTER),
+            ft.Text("Hardware notes: Face attendance requires the optional desktop face-recognition package and a registered compatible Flet face template. Fingerprint attendance requires a supported AS608/R307 serial reader connected to this computer; a phone/laptop built-in fingerprint sensor is not supported.", size=11, color=MUTED),
         ], spacing=12)),
         card(ft.Column([
-            ft.Text("Manual Attendance Correction", size=18, weight=ft.FontWeight.BOLD, color=WHITE),
-            ft.Text("Use only for an authorized, documented exception. A reason is stored in the audit log; duplicate and session checks still apply.", size=12, color=MUTED),
+            ft.Text("Fingerprint Enrollment", size=18, weight=ft.FontWeight.BOLD, color=WHITE),
+            ft.Text("Select an enrolled student from the roster, connect the configured reader, and scan the same finger twice. Use the same reader/COM port when taking attendance.", size=12, color=MUTED),
             manual_student,
+            subtle_button("Enroll Selected Student Fingerprint", enroll_fingerprint, icon="FINGERPRINT_ROUNDED"),
+        ], spacing=10)),
+        card(ft.Column([
+            ft.Text("Manual Attendance Correction", size=18, weight=ft.FontWeight.BOLD, color=WHITE),
+            ft.Text("Only use for an authorized exception. A reason of at least 10 characters is required and the action is audited.", size=12, color=MUTED),
             manual_reason,
-            subtle_button("Enroll Student Fingerprint", enroll_fingerprint, icon="FINGERPRINT_ROUNDED"),
             primary_button("Record Manual Attendance", record_manual, icon="EDIT_NOTE_ROUNDED"),
         ], spacing=10)),
         card(ft.Column([
             ft.Text("Live Attendance List", size=18, weight=ft.FontWeight.BOLD, color=WHITE),
-            ft.Text("This list is refreshed from saved Supabase records; scan messages are not treated as saved records unless the server confirms them.", size=12, color=MUTED),
+            ft.Text("Latest records are loaded from Supabase for the selected schedule and today's Manila date.", size=12, color=MUTED),
             scan_results,
         ], spacing=10)),
     ], spacing=16, scroll=ft.ScrollMode.AUTO, expand=True)
