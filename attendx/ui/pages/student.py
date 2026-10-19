@@ -262,35 +262,28 @@ def _face_registration(app) -> ft.Control:
 
 def _fingerprint_registration(app) -> ft.Control:
     status = ft.Text(
-        "Fingerprint enrollment is teacher-managed for the selected class. Ask your teacher to enroll you on the computer connected to the external AS608/R307 reader.",
+        "The APK version is intended to use Android's native fingerprint authentication on the student's own phone. "
+        "This desktop build cannot enroll or read the phone's fingerprint sensor.",
         color=MUTED, size=12
     )
 
-    async def device_check(_e):
-        result = await asyncio.to_thread(app.fingerprint_service.hardware.check_device)
-        if result.get("available"):
-            status.value = (
-                f"Reader connected on {result['port']} · templates "
-                f"{result['templates']} / {result['capacity']}. Ask your teacher to enroll your fingerprint in Attendance Center."
-            )
-            status.color = SUCCESS
-        else:
-            status.value = result.get("message", "Reader unavailable.")
-            status.color = ERROR
-        app.page.update()
-
     return ft.Column([
-        heading("Fingerprint Setup", "Fingerprint registration must be performed by your teacher using the class roster and a compatible external reader."),
+        heading("Fingerprint Setup", "Student-owned phone authentication is planned for the Android APK; no external AS608/R307 reader is used for this flow."),
         card(ft.Column([
-            ft.Row([subtle_button("Check Reader", device_check, icon="USB_ROUNDED")], wrap=True, spacing=10),
+            ft.Row([
+                ft.Icon(ft.Icons.PHONE_ANDROID_ROUNDED, color=CYAN, size=28),
+                ft.Column([
+                    ft.Text("Android BiometricPrompt", size=16, weight=ft.FontWeight.BOLD, color=WHITE),
+                    ft.Text("The student signs in to their own AttendX account and confirms with a fingerprint enrolled in Android Settings. AttendX does not receive or store the fingerprint image/template.", color=MUTED, size=12),
+                ], spacing=5, expand=True),
+            ], spacing=12),
             status,
             ft.Text(
-                "AttendX does not read fingerprints from a phone's built-in sensor. The AS608/R307 reader stores the fingerprint template locally; Supabase stores only the reader slot-to-student mapping.",
-                color=MUTED, size=11
+                "Important: phone fingerprint authentication confirms a local biometric unlock for the signed-in student's device. It is not a central fingerprint-template match and cannot identify which student touched a shared phone. Attendance must still be authorized by Supabase for that signed-in student and selected enrolled subject.",
+                color=GOLD, size=11
             ),
         ], spacing=12)),
     ], spacing=12, scroll=ft.ScrollMode.AUTO, expand=True)
-
 
 def _settings(app) -> ft.Control:
     health = ft.Text("Connection not checked yet.", color=MUTED, size=12)
