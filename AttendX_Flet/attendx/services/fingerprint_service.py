@@ -140,30 +140,76 @@ class FingerprintService:
         self.hardware = FingerprintHardware(settings)
 
     def register_own_fingerprint(self, finger_name: str) -> int:
-        if self.role != "STUDENT":
-            raise BackendError("Fingerprint enrollment must be initiated from the student's account.")
-        finger_name = " ".join((finger_name or "").strip().split())
-        if not finger_name or len(finger_name) > 40:
-            raise BackendError("Enter a finger label, such as Right Index.")
-        template_id = self.hardware.enroll()
-        try:
-            self.client.rpc("save_fingerprint_template", {
-                "p_sensor_template_id": template_id,
-                "p_finger_name": finger_name,
-            }).execute()
-            return template_id
-        except Exception as exc:
-            # Hardware enrolment succeeded but database mapping did not. Explain the orphaned
-            # sensor template so a teacher can remove it from the sensor, rather than report success.
+        raise BackendError(
+            "Fingerprint registration is teacher-managed in the shared AttendX-Web database. "
+            "Ask your teacher to select your class and use Enroll Student Fingerprint on the "
+            "computer connected to the AS608/R307 reader."
+        )
+
+    def register_student_fingerprint(self, student_id: str, schedule_id: str) -> int:
+        if self.role != "TEACHER":
+            raise BackendError("Only teachers can enroll a student's fingerprint.")
+        if not student_id or not schedule_id:
+            raise BackendError("Select a class schedule and enrolled student first.")
+        device_id = self.settings.fingerprint_port.strip()
+        if not device_id or len(device_id) > 64:
+            raise BackendError("Configure a valid fingerprint reader device ID in FINGERPRINT_PORT.")
+        template_position = self.hardware.enroll()
+        # AttendX-Web's mapping schema reserves sensor_slot 1..255. The hardware
+        # library reports its position zero-based, so persist position+1 and reverse
+        # that mapping during attendance scans.
+        sensor_slot = template_position + 1
+        if sensor_slot > 255:
             raise BackendError(
-                f"The sensor stored template #{template_id}, but the server mapping failed: {safe_message(exc)}. "
-                "Do not use it for attendance until the mapping is repaired."
+                f"The reader stored template #{template_position}, but AttendX supports slots 1–255. "
+                "Do not use this template until the reader slot is reconciled."
+            )
+        try:
+            response = self.client.functions.invoke(
+                "register-fingerprint",
+                invoke_options={"body": {
+                    "scheduleId": str(schedule_id),
+                    "studentId": str(student_id),
+                    "deviceId": device_id,
+                    "sensorSlot": sensor_slot,
+                }},
+            )
+            result = response.data if hasattr(response, "data") else response
+            if isinstance(result, dict) and result.get("ok") is not True:
+                raise BackendError(str(result.get("error") or "Fingerprint mapping was rejected."))
+            return template_position
+        except Exception as exc:
+            raise BackendError(
+                f"The sensor stored template #{template_position}, but the server mapping failed: "
+                f"{safe_message(exc)}. Do not use it for attendance until the mapping is repaired."
             ) from exc
 
     def mappings_for_schedule(self, schedule_id: str) -> list[dict[str, Any]]:
         if self.role != "TEACHER":
             raise BackendError("Only the assigned teacher can load fingerprint mappings.")
         try:
-            return query_paginated(lambda: self.client.table("fingerprint_credentials").select("student_id,sensor_template_id,finger_name").order("student_id"), max_items=10_000)
+            enrolled = query_paginated(
+                lambda: self.client.table("enrollments").select("student_id")
+                .eq("schedule_id", str(schedule_id)), max_items=10_000
+            )
+            student_ids = {str(row["student_id"]) for row in enrolled}
+            if not student_ids:
+                return []
+            rows = query_paginated(
+                lambda: self.client.table("fingerprint_templates")
+                .select("student_id,device_id,sensor_slot").order("student_id"),
+                max_items=10_000
+            )
+            return [
+                {
+                    "student_id": str(row["student_id"]),
+                    "sensor_template_id": int(row["sensor_slot"]) - 1,
+                    "finger_name": "Registered fingerprint",
+                    "device_id": row.get("device_id", ""),
+                }
+                for row in rows
+                if str(row.get("student_id")) in student_ids
+                and str(row.get("device_id", "")) == self.settings.fingerprint_port
+            ]
         except Exception as exc:
             raise BackendError(f"Could not load fingerprint mappings: {safe_message(exc)}") from exc
