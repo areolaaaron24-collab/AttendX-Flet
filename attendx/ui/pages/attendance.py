@@ -105,8 +105,11 @@ def build_teacher_attendance_center(app) -> ft.Control:
                                 update_live_records(schedule_id)
                                 app.page.update()
                             except Exception as exc:
+                                message = str(exc)
+                                duplicate = "already recorded" in message.lower() or "already verified" in message.lower()
                                 scan_results.controls.insert(0, ft.Row([
-                                    pill("NOT RECORDED", ERROR), ft.Text(str(exc), color=GOLD, size=12, selectable=True)
+                                    pill("ALREADY VERIFIED" if duplicate else "NOT RECORDED", GOLD if duplicate else ERROR),
+                                    ft.Text("Attendance already exists for this class today." if duplicate else message, color=GOLD, size=12, selectable=True)
                                 ], spacing=8))
                                 app.page.update()
                     await asyncio.sleep(0.025)
