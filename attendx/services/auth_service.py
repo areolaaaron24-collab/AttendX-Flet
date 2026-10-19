@@ -69,7 +69,9 @@ class AuthService:
             + "/functions/v1/"
             + function_name
         )
-        key = self.settings.supabase_key
+        # Use the publishable key for Edge Functions where configured; Auth/PostgREST
+        # uses the legacy anon key through the Supabase Python client.
+        key = self.settings.supabase_publishable_key or self.settings.supabase_key
         headers = {
             "apikey": key,
             "Authorization": f"Bearer {key}",
@@ -255,6 +257,12 @@ class AuthService:
             raise
         except Exception as exc:
             message = safe_message(exc)
+            if "invalid api key" in message.lower() or ("401" in message and "api key" in message.lower()):
+                raise BackendError(
+                    "Supabase rejected the client API key. In the existing Supabase project, "
+                    "copy the legacy anon/public key from Project Settings → API Keys into "
+                    "SUPABASE_ANON_KEY in your local .env. Do not use service_role or sb_secret keys."
+                ) from exc
             if "invalid login credentials" in message.lower():
                 raise BackendError(
                     "Invalid Account ID or password. If the account was just "
