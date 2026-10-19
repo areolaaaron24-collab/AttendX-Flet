@@ -184,6 +184,38 @@ class FingerprintService:
                 f"{safe_message(exc)}. Do not use it for attendance until the mapping is repaired."
             ) from exc
 
+    def verify_sensor_position(self, schedule_id: str, sensor_position: int) -> dict[str, Any]:
+        """Ask AttendX-Web to verify a reader slot against the selected class roster."""
+        if self.role != "TEACHER":
+            raise BackendError("Only teachers can verify fingerprint attendance.")
+        if not schedule_id:
+            raise BackendError("Select a class schedule before scanning fingerprints.")
+        position = int(sensor_position)
+        sensor_slot = position + 1
+        if position < 0 or sensor_slot > 255:
+            raise BackendError("The fingerprint reader returned an unsupported template slot.")
+        try:
+            response = self.client.functions.invoke(
+                "verify-fingerprint",
+                invoke_options={"body": {
+                    "scheduleId": str(schedule_id),
+                    "deviceId": self.settings.fingerprint_port.strip(),
+                    "sensorSlot": sensor_slot,
+                }},
+            )
+            result = response.data if hasattr(response, "data") else response
+            if not isinstance(result, dict) or result.get("ok") is not True:
+                message = result.get("error") if isinstance(result, dict) else None
+                raise BackendError(str(message or "The server did not verify this fingerprint for the selected class."))
+            student = result.get("student")
+            if not isinstance(student, dict) or not student.get("id"):
+                raise BackendError("The server verified no student for this fingerprint slot.")
+            return result
+        except BackendError:
+            raise
+        except Exception as exc:
+            raise BackendError(f"Fingerprint verification failed: {safe_message(exc)}") from exc
+
     def mappings_for_schedule(self, schedule_id: str) -> list[dict[str, Any]]:
         if self.role != "TEACHER":
             raise BackendError("Only the assigned teacher can load fingerprint mappings.")
