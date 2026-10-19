@@ -78,15 +78,8 @@ The face-recognition dependency may require a C/C++ toolchain and compatible pre
    ```
 
 3. The starter app deliberately reports a configuration error until real values are supplied; it does not pretend to be connected.
-4. **IMPORTANT — existing AttendX-Web database compatibility:** Do **not** run `supabase db push` or apply this repository's `supabase/migrations/001` through `006` to the existing AttendX-Web Supabase project. These migrations define a different schema (including `class_enrollments`, `attendance_records`, and uppercase roles), while AttendX-Web uses `enrollments`, `attendance`, and lowercase roles. The Flet services are being adapted to the existing web schema; until that compatibility work is complete and validated, use only a separate disposable test Supabase project if you need to experiment with the Flet-specific migrations. Never use production student data for this test.
-5. Deploy the Auth Edge Functions:
-
-   ```bash
-   supabase functions deploy account-register
-   supabase functions deploy account-id-login
-   supabase functions deploy account-password-reset
-   supabase functions deploy account-password-reset-page
-   ```
+4. **IMPORTANT — existing AttendX-Web database compatibility:** Do **not** run `supabase db push` or apply this repository's `supabase/migrations/001` through `006` to the existing AttendX-Web Supabase project. These migrations define a different schema (including `class_enrollments`, `attendance_records`, and uppercase roles), while AttendX-Web uses `enrollments`, `attendance`, and lowercase roles. A compatibility migration has been added to the AttendX-Web repository at `supabase/migrations/202610190001_flet_desktop_compatibility.sql`; it is source code only and has **not** been applied to the live database or validated against production. Review and test it in a separate Supabase project before considering deployment. Never use production student data for this test.
+5. **Do not redeploy this repository's Edge Functions over the existing AttendX-Web production functions yet.** The Web app already has its own account registration, login, password recovery, QR, face, and fingerprint functions. Keep using the deployed AttendX-Web versions unless the Flet/Web function differences have been reviewed and tested in a separate project.
 
    The functions use Supabase-provided server environment variables and perform privileged work server-side. Never copy a service-role/secret value into `.env`, Python source, GitHub, an Android/iOS package, or client logs.
 6. Configure Supabase Auth's Site URL and Redirect URLs for the deployed `account-password-reset-page` URL. The default recovery redirect is `${SUPABASE_URL}/functions/v1/account-password-reset-page`. Configure SMTP/email delivery in Supabase before expecting password-recovery emails in production. If you change the recovery URL, set `ATTENDX_RECOVERY_REDIRECT_URL` as a **server-side Edge Function secret**, and keep it aligned with the Auth allowlist.
