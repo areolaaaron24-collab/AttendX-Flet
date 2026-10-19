@@ -11,6 +11,10 @@ from dotenv import load_dotenv
 ROOT_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(ROOT_DIR / ".env")
 
+# AttendX-Web and AttendX-Flet share this existing Supabase project.
+# The URL is public; the public anon key must still be supplied locally.
+DEFAULT_SUPABASE_URL = "https://ligzoiktrdwcdqpkaudr.supabase.co"
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -39,10 +43,8 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
-        url = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
-        # supabase-py in this app is used for /auth/v1/token as well as
-        # PostgREST. The existing project’s legacy anon key is required for
-        # that flow; a newer sb_publishable_ key caused HTTP 401 Invalid API key.
+        url = os.getenv("SUPABASE_URL", "").strip().rstrip("/") or DEFAULT_SUPABASE_URL
+        # supabase-py uses Auth and PostgREST; this app requires the legacy anon JWT.
         anon_key = os.getenv("SUPABASE_ANON_KEY", "").strip()
         publishable_key = os.getenv("SUPABASE_PUBLISHABLE_KEY", "").strip()
         return cls(
@@ -72,20 +74,17 @@ def _int_env(key: str, default: int) -> int:
 
 
 def validate_public_key(settings: Settings) -> None:
-    if not settings.supabase_url or not settings.supabase_key:
+    if not settings.supabase_key:
         raise ConfigurationError(
-            "Supabase is not fully configured. In .env, set SUPABASE_URL and "
-            "SUPABASE_ANON_KEY using the existing AttendX Supabase project's "
-            "Project Settings → API Keys → legacy anon/public key. "
-            "SUPABASE_PUBLISHABLE_KEY may also be set for Edge Functions."
+            "AttendX is set to the existing AttendX-Web Supabase project, but its public "
+            "API key is missing. Copy .env.example to .env and set SUPABASE_ANON_KEY "
+            "to the project's legacy anon/public key from Project Settings → API Keys. "
+            "Do not use a service-role or secret key."
         )
     if not settings.supabase_url.startswith("https://"):
         raise ConfigurationError("SUPABASE_URL must be the HTTPS URL of your Supabase project.")
 
     key = settings.supabase_key.strip()
-    # A publishable key is not a replacement for the legacy anon JWT in this
-    # supabase-py Auth flow; reject it with a setup message rather than letting
-    # account creation succeed and sign-in fail later with HTTP 401.
     if key.startswith("sb_publishable_"):
         raise ConfigurationError(
             "SUPABASE_ANON_KEY is missing. The Python Auth client needs the "
@@ -94,8 +93,7 @@ def validate_public_key(settings: Settings) -> None:
         )
 
     is_secret = "service_role" in key.lower() or key.startswith("sb_secret_")
-    # Legacy Supabase service-role keys are JWTs whose role is encoded in the
-    # payload. Decode only to identify the role; this does not validate the JWT.
+    # Decode only to identify a legacy JWT role; this does not validate the JWT.
     parts = key.split(".")
     if len(parts) == 3:
         try:
