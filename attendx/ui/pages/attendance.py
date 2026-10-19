@@ -199,15 +199,15 @@ def build_teacher_attendance_center(app) -> ft.Control:
             if app.scan_running:
                 return
             if not app.fingerprint_service.hardware.is_installed():
-                raise BackendError("Fingerprint support is not installed. On a compatible Windows/Linux desktop, install pyserial and pyfingerprint, then configure FINGERPRINT_PORT in .env.")
+                raise BackendError("Fingerprint support is not installed. Install the optional reader dependencies with: pip install -r requirements-fingerprint.txt")
             enrolled = {str(row["student_id"]) for row in await asyncio.to_thread(app.teacher_service.class_enrollments, schedule_id)}
-            mappings = await asyncio.to_thread(app.fingerprint_service.mappings_for_schedule, schedule_id)
-            position_to_student = {int(row["sensor_template_id"]): str(row["student_id"])
-                                   for row in mappings if str(row["student_id"]) in enrolled}
-            if not position_to_student:
-                raise BackendError("No enrolled student has a saved fingerprint mapping for this schedule. Enroll students using the same connected sensor first.")
+            if not enrolled:
+                raise BackendError("No students are enrolled in this class schedule.")
+            device = await asyncio.to_thread(app.fingerprint_service.hardware.check_device)
+            if not device.get("available"):
+                raise BackendError(str(device.get("message") or f"Fingerprint reader is not available on {device.get('port', 'the configured port')}."))
             app.scan_running = True
-            camera_status.value = "Fingerprint reader is active · scan one finger at a time · press EXIT to stop."
+            camera_status.value = f"Fingerprint reader connected on {device.get('port')} · scan one finger at a time · press EXIT to stop."
             camera_status.color = SUCCESS
             app.page.update()
             last_position = None
@@ -217,19 +217,30 @@ def build_teacher_attendance_center(app) -> ft.Control:
                     match = await asyncio.to_thread(app.fingerprint_service.hardware.identify, 3)
                     if match:
                         position, score = match
-                        student_id = position_to_student.get(position)
                         now = time.monotonic()
                         if now - last_seen_at > 2.5 or position != last_position:
                             last_seen_at, last_position = now, position
-                            if not student_id:
-                                scan_results.controls.insert(0, ft.Row([pill("NOT MAPPED", ERROR), ft.Text(f"Sensor template #{position} is not assigned to an enrolled student in this class.", color=GOLD, size=12)], spacing=8))
-                            else:
-                                try:
-                                    outcome = await asyncio.to_thread(app.attendance_service.record_biometric, student_id, schedule_id, "FINGERPRINT")
-                                    scan_results.controls.insert(0, ft.Row([pill(outcome.get("status", "RECORDED"), SUCCESS), ft.Text(outcome.get("message", f"Fingerprint verified · match score {score}"), color=WHITE, size=12)], spacing=8))
-                                    update_live_records(schedule_id)
-                                except Exception as exc:
-                                    scan_results.controls.insert(0, ft.Row([pill("NOT RECORDED", ERROR), ft.Text(str(exc), color=GOLD, size=12)], spacing=8))
+                            try:
+                                verified = await asyncio.to_thread(
+                                    app.fingerprint_service.verify_sensor_position, schedule_id, position
+                                )
+                                student = verified.get("student", {})
+                                student_id = str(student.get("id", ""))
+                                if not student_id or student_id not in enrolled:
+                                    raise BackendError("The fingerprint is not assigned to an enrolled student in this class.")
+                                outcome = await asyncio.to_thread(
+                                    app.attendance_service.record_biometric, student_id, schedule_id, "FINGERPRINT"
+                                )
+                                name = student.get("name") or "Student"
+                                scan_results.controls.insert(0, ft.Row([
+                                    pill(outcome.get("status", "RECORDED"), SUCCESS),
+                                    ft.Text(f"{name} · Fingerprint verified (score {score}). {outcome.get('message', '')}", color=WHITE, size=12),
+                                ], spacing=8))
+                                update_live_records(schedule_id)
+                            except Exception as exc:
+                                scan_results.controls.insert(0, ft.Row([
+                                    pill("NOT RECORDED", ERROR), ft.Text(str(exc), color=GOLD, size=12, selectable=True)
+                                ], spacing=8))
                             app.page.update()
                     await asyncio.sleep(0.05)
             finally:
