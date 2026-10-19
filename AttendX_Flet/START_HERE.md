@@ -45,9 +45,9 @@ The app can open the portal screen without Supabase credentials. Real login, reg
 
 1. In the same folder, open `.env` in a text editor.
 2. Replace the sample `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` values with your project's URL and publishable/anon key.
-3. Apply `supabase\migrations\001_core_schema.sql` through `006_class_match_enrollment_policy.sql` in order, or use Supabase CLI as described in `README.md`.
-4. Deploy the four Edge Functions listed in `README.md`.
-5. Test with non-production accounts first.
+3. **Do not apply this Flet folder's six migrations to the existing AttendX-Web Supabase project.** They define a different schema from the web app and can create incompatible tables/functions/policies. The Flet database services must be adapted and validated first.
+4. If you want to test the Flet-specific migrations, use a separate disposable Supabase project only, never the production AttendX-Web project.
+5. Do not deploy the Flet Edge Functions to production until compatibility has been reviewed.
 
 **Never put a Supabase service-role/secret key in `.env` or the Flet client.** Never copy your old SQLite database, student exports, passwords, or biometric files into GitHub.
 
