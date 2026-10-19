@@ -144,7 +144,6 @@ class AttendanceService:
         for row in records:
             row["student"] = pmap.get(str(row["student_id"]), {})
             row["schedule"] = smap.get(str(row["schedule_id"]), {})
-            row["status"] = str(row.get("status", "")).replace("LATE-ABSENT", "LATE_ABSENT")
         return records
 
     def today_summary(self) -> dict[str, int]:
