@@ -78,15 +78,7 @@ The face-recognition dependency may require a C/C++ toolchain and compatible pre
    ```
 
 3. The starter app deliberately reports a configuration error until real values are supplied; it does not pretend to be connected.
-4. Apply database migrations **in numeric order**. With Supabase CLI installed and this folder selected:
-
-   ```bash
-   supabase login
-   supabase link --project-ref YOUR_PROJECT_REF
-   supabase db push
-   ```
-
-   Alternatively, paste/run each `supabase/migrations/*.sql` file in the Supabase SQL Editor in lexical order (`001` through `006`). Do not run the optional cron file until you have checked whether `pg_cron` is available for your project.
+4. **IMPORTANT — existing AttendX-Web database compatibility:** Do **not** run `supabase db push` or apply this repository's `supabase/migrations/001` through `006` to the existing AttendX-Web Supabase project. These migrations define a different schema (including `class_enrollments`, `attendance_records`, and uppercase roles), while AttendX-Web uses `enrollments`, `attendance`, and lowercase roles. The Flet services are being adapted to the existing web schema; until that compatibility work is complete and validated, use only a separate disposable test Supabase project if you need to experiment with the Flet-specific migrations. Never use production student data for this test.
 5. Deploy the Auth Edge Functions:
 
    ```bash
@@ -98,7 +90,7 @@ The face-recognition dependency may require a C/C++ toolchain and compatible pre
 
    The functions use Supabase-provided server environment variables and perform privileged work server-side. Never copy a service-role/secret value into `.env`, Python source, GitHub, an Android/iOS package, or client logs.
 6. Configure Supabase Auth's Site URL and Redirect URLs for the deployed `account-password-reset-page` URL. The default recovery redirect is `${SUPABASE_URL}/functions/v1/account-password-reset-page`. Configure SMTP/email delivery in Supabase before expecting password-recovery emails in production. If you change the recovery URL, set `ATTENDX_RECOVERY_REDIRECT_URL` as a **server-side Edge Function secret**, and keep it aligned with the Auth allowlist.
-7. Use a new test account first. Registration supports only Teacher and Student. Do not create a TC role. Verify account creation, login, logout, permissions, password recovery, and attendance from two separate accounts before importing legacy records.
+7. Use a new test account first. Registration supports only Teacher and Student. Do not create a TC role. Verify account creation, login, logout, permissions, password recovery, and attendance from two separate accounts before importing legacy records. Do not connect this Flet build to the existing AttendX-Web production database until the schema/RPC compatibility audit is complete.
 
 ### RLS and permissions
 
