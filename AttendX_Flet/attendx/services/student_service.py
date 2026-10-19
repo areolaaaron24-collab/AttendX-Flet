@@ -105,7 +105,6 @@ class StudentService:
         schedule_map = {str(row["id"]): row for row in schedules}
         for row in records:
             row["schedule"] = schedule_map.get(str(row.get("schedule_id")), {})
-            row["status"] = str(row.get("status", "")).replace("LATE-ABSENT", "LATE_ABSENT")
         return records
 
     def attendance_summary(self) -> dict[str, Any]:
