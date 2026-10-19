@@ -226,39 +226,33 @@ def _face_registration(app) -> ft.Control:
 
 
 def _fingerprint_registration(app) -> ft.Control:
-    finger = dropdown("Finger Label", ["Right Index", "Left Index", "Right Thumb", "Left Thumb", "Right Middle", "Left Middle", "Right Ring", "Left Ring", "Right Little", "Left Little"])
-    status = ft.Text("This requires a compatible external AS608/R307 USB-to-serial reader. A phone's built-in sensor is not available to the app.", color=MUTED, size=12)
+    status = ft.Text(
+        "Fingerprint enrollment is teacher-managed for the selected class. Ask your teacher to enroll you on the computer connected to the external AS608/R307 reader.",
+        color=MUTED, size=12
+    )
+
     async def device_check(_e):
         result = await asyncio.to_thread(app.fingerprint_service.hardware.check_device)
         if result.get("available"):
-            status.value = f"Reader connected on {result['port']} · templates {result['templates']} / {result['capacity']}"
+            status.value = (
+                f"Reader connected on {result['port']} · templates "
+                f"{result['templates']} / {result['capacity']}. Ask your teacher to enroll your fingerprint in Attendance Center."
+            )
             status.color = SUCCESS
         else:
             status.value = result.get("message", "Reader unavailable.")
             status.color = ERROR
         app.page.update()
-    async def register(_e):
-        try:
-            if not finger.value:
-                raise BackendError("Select a finger label first.")
-            status.value = "Follow the sensor prompt: place and lift the same finger as instructed."
-            status.color = CYAN
-            app.page.update()
-            template_id = await asyncio.to_thread(app.fingerprint_service.register_own_fingerprint, finger.value)
-            app.audit_service.record("fingerprint_registered", "fingerprint_credentials", app.user_id, {"finger_name": finger.value, "template_id": template_id})
-            status.value = f"Fingerprint mapping saved for sensor template #{template_id}."
-            status.color = SUCCESS
-        except Exception as exc:
-            status.value = str(exc)
-            status.color = ERROR
-        app.page.update()
+
     return ft.Column([
-        heading("Fingerprint Setup", "Use a physical reader connected to the computer through a compatible USB-to-serial adapter."),
+        heading("Fingerprint Setup", "Fingerprint registration must be performed by your teacher using the class roster and a compatible external reader."),
         card(ft.Column([
-            finger,
-            ft.Row([subtle_button("Check Reader", device_check, icon="USB_ROUNDED"), primary_button("Enroll Fingerprint", register, icon="FINGERPRINT_ROUNDED")], wrap=True, spacing=10),
+            ft.Row([subtle_button("Check Reader", device_check, icon="USB_ROUNDED")], wrap=True, spacing=10),
             status,
-            ft.Text("No fingerprint is read from the mobile phone's internal sensor. The sensor stores its own template; AttendX stores only the sensor's template ID and finger label.", color=MUTED, size=11),
+            ft.Text(
+                "AttendX does not read fingerprints from a phone's built-in sensor. The AS608/R307 reader stores the fingerprint template locally; Supabase stores only the reader slot-to-student mapping.",
+                color=MUTED, size=11
+            ),
         ], spacing=12)),
     ], spacing=12, scroll=ft.ScrollMode.AUTO, expand=True)
 
