@@ -157,7 +157,7 @@ def build_teacher_attendance_center(app) -> ft.Control:
                 return
             if not app.face_service.is_available():
                 raise BackendError("Face recognition is not installed. Install face-recognition/dlib for this desktop OS and retry.")
-            templates = await asyncio.to_thread(app.face_service.templates_for_current_classes)
+            templates = await asyncio.to_thread(app.face_service.templates_for_current_classes, schedule_id)
             enrolled = {e["student_id"] for e in app.teacher_service.class_enrollments(schedule_id)}
             templates = [t for t in templates if t.get("student_id") in enrolled]
             if not templates:
