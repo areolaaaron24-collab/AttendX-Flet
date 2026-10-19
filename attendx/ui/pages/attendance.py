@@ -6,7 +6,7 @@ from typing import Any
 import flet as ft
 
 from attendx.services.supabase_client import BackendError
-from attendx.ui.components import card, dropdown, field, heading, primary_button, schedule_label, simple_table, subtle_button, pill
+from attendx.ui.components import card, dropdown, heading, primary_button, schedule_label, simple_table, subtle_button, pill
 from attendx.ui.theme import CYAN, ERROR, GOLD, MUTED, SUCCESS, WHITE
 
 
@@ -16,7 +16,7 @@ def build_teacher_attendance_center(app) -> ft.Control:
     initial_schedule = preferred or (schedules[0] if schedules else None)
     choice = dropdown("Select Schedule", [schedule_label(s) for s in schedules], value=schedule_label(initial_schedule) if initial_schedule else None)
     id_by_label = {schedule_label(s): str(s["id"]) for s in schedules}
-    selected_text = ft.Text("Select one of your schedules to start an attendance session.", color=MUTED, size=12)
+    selected_text = ft.Text("Select one of your class schedules before scanning attendance.", color=MUTED, size=12)
     camera_preview = ft.Image(width=540, height=330, fit=ft.BoxFit.CONTAIN, src="")
     camera_status = ft.Text("Camera is stopped.", color=MUTED, size=12)
     scan_results = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO, height=240)
