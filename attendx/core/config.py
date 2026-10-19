@@ -15,7 +15,11 @@ load_dotenv(ROOT_DIR / ".env")
 @dataclass(frozen=True)
 class Settings:
     supabase_url: str
+    # Legacy public anon key used by supabase-py Auth/PostgREST requests.
+    # Do not put a service-role or sb_secret key here.
     supabase_key: str
+    # Optional publishable key used for Supabase Edge Function requests.
+    supabase_publishable_key: str = ""
     timezone: str = "Asia/Manila"
     camera_index: int = 0
     camera_width: int = 640
@@ -35,13 +39,15 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         url = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
-        key = (
-            os.getenv("SUPABASE_PUBLISHABLE_KEY", "").strip()
-            or os.getenv("SUPABASE_ANON_KEY", "").strip()
-        )
+        # supabase-py in this app is used for /auth/v1/token as well as
+        # PostgREST. The existing project’s legacy anon key is required for
+        # that flow; a newer sb_publishable_ key caused HTTP 401 Invalid API key.
+        anon_key = os.getenv("SUPABASE_ANON_KEY", "").strip()
+        publishable_key = os.getenv("SUPABASE_PUBLISHABLE_KEY", "").strip()
         return cls(
             supabase_url=url,
-            supabase_key=key,
+            supabase_key=anon_key or publishable_key,
+            supabase_publishable_key=publishable_key,
             timezone=os.getenv("APP_TIMEZONE", "Asia/Manila").strip() or "Asia/Manila",
             camera_index=_int_env("CAMERA_INDEX", 0),
             camera_width=_int_env("CAMERA_WIDTH", 640),
@@ -65,14 +71,27 @@ def _int_env(key: str, default: int) -> int:
 
 
 def validate_public_key(settings: Settings) -> None:
-    if not settings.is_configured:
+    if not settings.supabase_url or not settings.supabase_key:
         raise ConfigurationError(
-            "Supabase is not configured. Copy .env.example to .env and set "
-            "SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY."
+            "Supabase is not fully configured. In .env, set SUPABASE_URL and "
+            "SUPABASE_ANON_KEY using the existing AttendX Supabase project's "
+            "Project Settings → API Keys → legacy anon/public key. "
+            "SUPABASE_PUBLISHABLE_KEY may also be set for Edge Functions."
         )
     if not settings.supabase_url.startswith("https://"):
         raise ConfigurationError("SUPABASE_URL must be the HTTPS URL of your Supabase project.")
+
     key = settings.supabase_key.strip()
+    # A publishable key is not a replacement for the legacy anon JWT in this
+    # supabase-py Auth flow; reject it with a setup message rather than letting
+    # account creation succeed and sign-in fail later with HTTP 401.
+    if key.startswith("sb_publishable_"):
+        raise ConfigurationError(
+            "SUPABASE_ANON_KEY is missing. The Python Auth client needs the "
+            "existing project's legacy anon/public key. Keep SUPABASE_PUBLISHABLE_KEY "
+            "for Edge Functions and add SUPABASE_ANON_KEY to .env."
+        )
+
     is_secret = "service_role" in key.lower() or key.startswith("sb_secret_")
     # Legacy Supabase service-role keys are JWTs whose role is encoded in the
     # payload. Decode only to identify the role; this does not validate the JWT.
