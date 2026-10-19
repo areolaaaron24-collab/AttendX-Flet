@@ -1,28 +1,26 @@
 from __future__ import annotations
 
 import logging
-import os
-from functools import lru_cache
 from typing import Any
 
 from supabase import Client, create_client
 
-from attendx.core.config import ConfigurationError, Settings, validate_public_key
+from attendx.core.config import Settings, validate_public_key
 from attendx.core.pagination import fetch_all_pages
 
 log = logging.getLogger(__name__)
 
 
 class BackendError(RuntimeError):
-    """A backend request failed or the server response was invalid."""
+    """Authentication or backend request failed."""
 
 
 def get_client(settings: Settings | None = None) -> Client:
     config = settings or Settings.from_env()
     validate_public_key(config)
     try:
-        # Settings.from_env already prefers the publishable key, then anon.
-        # Do not let a second environment variable override a validated public key.
+        # Use the legacy anon JWT for supabase-py Auth/PostgREST. The optional
+        # sb_publishable key is reserved for Edge Function HTTP requests.
         return create_client(config.supabase_url, config.supabase_key)
     except Exception as exc:
         log.exception("Could not initialize Supabase client")
@@ -73,11 +71,7 @@ def query_data(query: Any) -> list[dict[str, Any]]:
 
 
 def query_paginated(query_factory, *, page_size: int = 500, max_items: int = 10_000) -> list[dict[str, Any]]:
-    """Execute a stable Supabase query in pages instead of relying on a single API cap.
-
-    `query_factory` must return a fresh, ordered PostgREST query builder each time.
-    The database's RLS policies still apply to every page.
-    """
+    """Execute a stable Supabase query in pages instead of relying on a single API cap."""
     return fetch_all_pages(
         lambda offset, limit: query_data(query_factory().range(offset, offset + limit - 1)),
         page_size=page_size,
@@ -87,11 +81,7 @@ def query_paginated(query_factory, *, page_size: int = 500, max_items: int = 10_
 
 def query_by_values(client: Client, table_name: str, columns: str, filter_column: str,
                     values: list[Any], *, chunk_size: int = 250) -> list[dict[str, Any]]:
-    """Fetch unique rows by chunks of values to keep IN filters/request URLs manageable.
-
-    This helper is intended for internal, hard-coded table/column names and values read
-    from authorized database results, not raw user-supplied identifiers.
-    """
+    """Fetch rows by chunks of values from authorized database results."""
     distinct: list[Any] = []
     seen: set[Any] = set()
     for value in values:
