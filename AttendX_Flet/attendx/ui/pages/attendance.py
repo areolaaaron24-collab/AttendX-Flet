@@ -301,6 +301,33 @@ def build_teacher_attendance_center(app) -> ft.Control:
         except Exception as exc:
             app.notify(str(exc), error=True)
 
+    async def enroll_fingerprint(_e):
+        try:
+            schedule_id = selected_schedule_id()
+            label = manual_student.value
+            student_id = manual_student_ids.get(label or "")
+            if not student_id:
+                raise BackendError("Select an enrolled student from the roster first.")
+            camera_status.value = "Follow the fingerprint reader prompts and scan the same finger twice."
+            camera_status.color = CYAN
+            app.page.update()
+            template_position = await asyncio.to_thread(
+                app.fingerprint_service.register_student_fingerprint, student_id, schedule_id
+            )
+            app.audit_service.record(
+                "fingerprint_registered", "fingerprint_templates", student_id,
+                {"schedule_id": schedule_id, "sensor_template_id": template_position}
+            )
+            app.notify(f"Fingerprint mapping saved for the selected student (reader template #{template_position}).")
+            camera_status.value = f"Fingerprint enrolled · sensor template #{template_position}."
+            camera_status.color = SUCCESS
+            app.page.update()
+        except Exception as exc:
+            camera_status.value = str(exc)
+            camera_status.color = ERROR
+            app.page.update()
+            app.notify(str(exc), error=True)
+
     def stop_scan(_e):
         app.scan_running = False
         camera_status.value = "Stopping active scanner/reader…"
@@ -346,6 +373,7 @@ def build_teacher_attendance_center(app) -> ft.Control:
             ft.Text("Use only for an authorized, documented exception. A reason is stored in the audit log; duplicate and session checks still apply.", size=12, color=MUTED),
             manual_student,
             manual_reason,
+            subtle_button("Enroll Student Fingerprint", enroll_fingerprint, icon="FINGERPRINT_ROUNDED"),
             primary_button("Record Manual Attendance", record_manual, icon="EDIT_NOTE_ROUNDED"),
         ], spacing=10)),
         card(ft.Column([
