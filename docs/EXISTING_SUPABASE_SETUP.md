@@ -16,13 +16,15 @@ Use the same Supabase project as AttendX-Web. Do not create another project.
 
 Never place a service-role key, secret key, database password, or other server secret in `.env`, source code, screenshots, or GitHub. Do not share your `.env` file.
 
-## Important backend compatibility limits
+## Attendance Center compatibility and safe rollout
 
-- The web schema uses lowercase roles (`student`, `teacher`) and tables including `profiles`, `subjects`, `schedules`, `enrollments`, `attendance`, `qr_tokens`, `face_templates`, and `attendance_sessions`.
-- Do not apply this repository's old Flet migrations `001`–`006` to the existing AttendX-Web project; they describe a different schema.
-- The compatibility migration in AttendX-Web is source code only and has not been applied to the live database. Do not run it against production until all table columns, constraints, RLS policies, RPC signatures, and Edge Function behavior are reviewed and tested.
-- Do not redeploy Flet Edge Functions over the existing web functions. Registration depends on server-side Supabase secrets configured in the existing project.
-- A successful Python compile or GitHub Actions test run does not prove the live Supabase project has every RPC used by Flet. Test registration and login with a test account first, then verify each attendance method and permissions.
+- The Attendance Center's supported QR path is **teacher scans the student's personal QR Pass** for the selected schedule. This uses the existing AttendX-Web `verify-qr` Edge Function and `record_attendance` RPC. The old teacher-generated Session QR button was removed from the Flet screen because it depends on an un-applied compatibility migration.
+- Fingerprint attendance uses the existing `register-fingerprint` Edge Function and `fingerprint_templates` table. It requires a compatible AS608/R307 reader over serial, `pyserial` + `pyfingerprint`, and the same configured reader/COM port for enrollment and scanning.
+- The web app's `face_templates` table stores **face-api** descriptors. Flet uses Python `face_recognition` descriptors, which are not interchangeable. Flet now stores these in a separate `flet_face_templates` table so it cannot overwrite Web face registrations.
+- To enable Flet face enrollment/recognition on the existing project, review and apply only the new additive migration `AttendX-Web/supabase/migrations/202610200001_flet_face_templates.sql` in Supabase SQL Editor. It creates the isolated table, student-owned RLS policies, and a teacher-authorized RPC. It does not replace Web face templates or change attendance records. Back up the project and review the SQL before applying it.
+- Do **not** apply the older `202610190001_flet_desktop_compatibility.sql` blindly. It changes attendance/session RPCs and needs a separate production-schema review. Do not apply this repository's Flet migrations `001`–`006`; they describe a different schema.
+- Do not redeploy Flet Edge Functions over existing Web functions. Registration depends on server-side Supabase secrets configured in the existing project.
+- A successful Python compile or GitHub Actions test run does not prove live Supabase, camera, face model, or fingerprint hardware behavior. Test each method with a test account and enrolled test student before classroom use.
 
 ## If setup still fails
 
