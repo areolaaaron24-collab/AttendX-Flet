@@ -21,8 +21,7 @@ def build_teacher_attendance_center(app) -> ft.Control:
     camera_status = ft.Text("Camera is stopped.", color=MUTED, size=12)
     scan_results = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO, height=240)
     app.scan_running = False
-    manual_student = dropdown("Student for manual correction", [], value=None)
-    manual_reason = field("Reason (required; 10–500 characters)", multiline=True, hint="Document the reason for the manual attendance action.")
+    manual_student = dropdown("Student to enroll fingerprint", [], value=None)
     manual_student_ids: dict[str, str] = {}
 
     def load_manual_roster(schedule_id: str) -> None:
@@ -255,23 +254,6 @@ def build_teacher_attendance_center(app) -> ft.Control:
         except Exception as exc:
             app.notify(str(exc), error=True)
 
-    async def record_manual(_e):
-        try:
-            schedule_id = selected_schedule_id()
-            label = manual_student.value
-            student_id = manual_student_ids.get(label or "")
-            if not student_id:
-                raise BackendError("Select a student enrolled in this schedule.")
-            outcome = await asyncio.to_thread(app.attendance_service.record_manual, student_id, schedule_id, manual_reason.value or "")
-            manual_reason.value = ""
-            app.audit_service.record("manual_attendance_ui_action", "attendance_records", str(outcome.get("record_id", "")), {"schedule_id": schedule_id})
-            update_live_records(schedule_id)
-            scan_results.controls.insert(0, ft.Row([pill(outcome.get("status", "RECORDED"), SUCCESS), ft.Text(outcome.get("message", "Manual attendance recorded."), color=WHITE, size=12)], spacing=8))
-            app.page.update()
-            app.notify(outcome.get("message", "Manual attendance recorded."))
-        except Exception as exc:
-            app.notify(str(exc), error=True)
-
     async def enroll_fingerprint(_e):
         try:
             schedule_id = selected_schedule_id()
@@ -350,12 +332,6 @@ def build_teacher_attendance_center(app) -> ft.Control:
             ft.Text("Select an enrolled student from the roster, connect the configured reader, and scan the same finger twice. Use the same reader/COM port when taking attendance.", size=12, color=MUTED),
             manual_student,
             subtle_button("Enroll Selected Student Fingerprint", enroll_fingerprint, icon="FINGERPRINT_ROUNDED"),
-        ], spacing=10)),
-        card(ft.Column([
-            ft.Text("Manual Attendance Correction", size=18, weight=ft.FontWeight.BOLD, color=WHITE),
-            ft.Text("Only use for an authorized exception. A reason of at least 10 characters is required and the action is audited.", size=12, color=MUTED),
-            manual_reason,
-            primary_button("Record Manual Attendance", record_manual, icon="EDIT_NOTE_ROUNDED"),
         ], spacing=10)),
         card(ft.Column([
             ft.Text("Live Attendance List", size=18, weight=ft.FontWeight.BOLD, color=WHITE),
