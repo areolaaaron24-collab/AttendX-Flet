@@ -202,7 +202,7 @@ def _face_registration(app) -> ft.Control:
     async def delete_registration(_e):
         try:
             await asyncio.to_thread(app.face_service.delete_own_face)
-            app.audit_service.record("face_template_deleted", "face_templates", app.user_id, {})
+            app.audit_service.record("face_template_deleted", "flet_face_templates", app.user_id, {})
             status.value = "Face template deleted. Re-register before face attendance can recognize you."
             status.color = SUCCESS
         except Exception as exc:
