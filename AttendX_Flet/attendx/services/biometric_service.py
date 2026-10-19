@@ -47,26 +47,39 @@ class FaceBiometricService:
         if len(embedding) != 128 or not all(math.isfinite(float(x)) for x in embedding):
             raise BackendError("Invalid face descriptor. Nothing was saved.")
         try:
-            result = self.client.rpc("register_face_template", {
-                "p_embedding": [float(x) for x in embedding],
-            }).execute().data
-            if isinstance(result, list) and result:
-                result = result[0]
-            if isinstance(result, dict) and result.get("ok") is False:
-                raise BackendError(str(result.get("message") or "Face template was rejected."))
+            # AttendX-Web stores numeric descriptors in a PostgreSQL double precision[].
+            # Keep a distinct model_version because face_recognition embeddings are not
+            # interchangeable with the browser's face-api descriptors.
+            self.client.table("face_templates").upsert({
+                "student_id": self.actor_id,
+                "descriptor": [float(x) for x in embedding],
+                "model_version": "face_recognition-128d-v1",
+            }, on_conflict="student_id").execute()
         except BackendError:
             raise
         except Exception as exc:
             raise BackendError(f"Could not save the face descriptor: {safe_message(exc)}") from exc
 
-    def templates_for_current_classes(self) -> list[dict[str, Any]]:
+    def templates_for_current_classes(self, schedule_id: str) -> list[dict[str, Any]]:
         if self.role != "TEACHER":
             raise BackendError("Only the assigned teacher can load face descriptors for a class.")
+        if not schedule_id:
+            raise BackendError("Select a class schedule before starting face attendance.")
         try:
-            rows = query_paginated(lambda: self.client.table("face_templates").select("student_id,embedding,algorithm").order("student_id"), max_items=10_000)
-            return [r for r in rows if isinstance(r.get("embedding"), list) and len(r["embedding"]) == 128]
+            response = self.client.rpc("attendx_face_templates_for_schedule", {
+                "p_schedule_id": str(schedule_id),
+            }).execute()
+            rows = response.data or []
+            return [
+                {"student_id": row["student_id"], "embedding": row["embedding"]}
+                for row in rows
+                if isinstance(row.get("embedding"), list) and len(row["embedding"]) == 128
+            ]
         except Exception as exc:
-            raise BackendError(f"Could not load authorized face templates: {safe_message(exc)}") from exc
+            raise BackendError(
+                "Could not load authorized face templates. Confirm that the AttendX-Web compatibility "
+                f"migration is applied: {safe_message(exc)}"
+            ) from exc
 
     def has_own_face(self) -> bool:
         rows = query_data(self.client.table("face_templates").select("student_id").eq("student_id", self.actor_id).limit(1))
